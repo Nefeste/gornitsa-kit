@@ -1,0 +1,27 @@
+# Проверки самого набора на каждом PR и в main: тесты скриптов, линтер workflow и shellcheck.
+name: Проверки набора
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Тесты, actionlint, shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Тесты скриптов
+        run: node --test test/*.test.mjs
+      - name: Линтер workflow (actionlint, закреплённая версия)
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color
+      - name: shellcheck
+        run: shellcheck -S warning actions/automerge/automerge.sh

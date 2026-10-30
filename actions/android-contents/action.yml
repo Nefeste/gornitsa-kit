@@ -1,0 +1,103 @@
+# Что внутри готового APK: разрешения по белому списку игры и запретному списку студии,
+# автобэкап выключен, target API, выравнивание 64-битных библиотек на 16 КБ, лишние архитектуры,
+# размер. Полный список разрешений — в сводке запуска. Для AAB проверяется только то, что не
+# зависит от манифеста (16 КБ, архитектуры, размер): манифест у AAB тот же, что у APK.
+name: Содержимое Android
+description: Проверяет разрешения, автобэкап, target API, 16 КБ и размер готового APK или AAB.
+inputs:
+  file:
+    description: Путь к .apk или .aab
+    required: true
+  allow-file:
+    description: Файл белого списка разрешений (строка — имя, «*» в конце — любая концовка); пусто — не проверять
+    required: false
+    default: ''
+  deny:
+    description: Регулярное выражение запретных разрешений; по умолчанию — список студии
+    required: false
+    default: ''
+  forbid:
+    description: Дополнительно запретные для этой игры (например INTERNET для игры без сети)
+    required: false
+    default: ''
+  require:
+    description: Регулярное выражение разрешения, которое обязано быть (признак, что список прочитался)
+    required: false
+    default: ''
+  backup:
+    description: 'android:allowBackup — off: обязан быть выключен (по умолчанию); on: обязан быть включён; any: не проверять'
+    required: false
+    default: 'off'
+  min-target-sdk:
+    description: Наименьший target API; пусто — не проверять
+    required: false
+    default: ''
+  align-16k:
+    description: Проверять выравнивание 64-битных .so на 16 КБ
+    required: false
+    default: 'true'
+  only-arm64:
+    description: В сборке не должно быть других архитектур, кроме arm64-v8a
+    required: false
+    default: 'false'
+  max-size-mb:
+    description: Наибольший размер файла в МБ; пусто — не проверять
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+        ALLOW_FILE: ${{ inputs.allow-file }}
+        DENY: ${{ inputs.deny }}
+        FORBID: ${{ inputs.forbid }}
+        REQUIRE: ${{ inputs.require }}
+        BACKUP: ${{ inputs.backup }}
+        MIN_SDK: ${{ inputs.min-target-sdk }}
+        ALIGN: ${{ inputs.align-16k }}
+        ONLY64: ${{ inputs.only-arm64 }}
+        MAX_MB: ${{ inputs.max-size-mb }}
+      run: |
+        set -euo pipefail
+        BT="$ANDROID_HOME/build-tools/$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort -V | tail -n1)"
+        WORK="$RUNNER_TEMP/contents"; rm -rf "$WORK"; mkdir -p "$WORK"; unzip -q "$FILE" -d "$WORK"
+        case "$FILE" in *.aab) KIND=aab; LIBS="$WORK/base/lib" ;; *) KIND=apk; LIBS="$WORK/lib" ;; esac
+        NAME="$(basename "$FILE")"
+        FAIL=0
+
+        SIZE="$(stat -c %s "$FILE")"
+        MB="$(awk -v s="$SIZE" 'BEGIN { printf "%.1f", s / 1048576 }')"
+        { echo "### $NAME"; echo ""; echo "Размер: $MB МБ"; } >> "$GITHUB_STEP_SUMMARY"
+        if [ -n "$MAX_MB" ] && [ "$SIZE" -gt $((MAX_MB * 1048576)) ]; then echo "::error::$NAME — $MB МБ, больше предела $MAX_MB МБ"; FAIL=1; fi
+
+        # 16 КБ: у каждой 64-битной .so все сегменты LOAD выровнены не меньше чем на 2^14.
+        # 32-битные armeabi-v7a законно бывают на 4 КБ.
+        if [ "$ALIGN" = true ] && [ -d "$LIBS/arm64-v8a" ]; then
+          while IFS= read -r so; do
+            for a in $(readelf -lW "$so" | awk '$1=="LOAD"{print $NF}'); do
+              if [ $((a)) -lt 16384 ]; then echo "::error::$(basename "$so"): LOAD выровнен на $a, нужно 0x4000"; FAIL=1; fi
+            done
+          done < <(find "$LIBS/arm64-v8a" -name '*.so')
+          if [ "$KIND" = apk ]; then "$BT/zipalign" -c -P 16 -v 4 "$FILE" > "$RUNNER_TEMP/zipalign.log" || { tail -n 30 "$RUNNER_TEMP/zipalign.log"; echo "::error::zipalign: APK не выровнен на 16 КБ"; FAIL=1; }; fi
+          echo "16 КБ: проверено ($(find "$LIBS/arm64-v8a" -name '*.so' | wc -l) 64-битных библиотек)"
+        fi
+        if [ "$ONLY64" = true ] && [ -d "$LIBS" ]; then
+          OTHER="$(find "$LIBS" -mindepth 1 -maxdepth 1 -type d ! -name arm64-v8a -printf '%f ' || true)"
+          if [ -n "$OTHER" ]; then echo "::error::Лишние архитектуры: $OTHER"; FAIL=1; fi
+        fi
+
+        if [ "$KIND" = apk ]; then
+          "$BT/aapt2" dump permissions "$FILE" > "$WORK/permissions.txt" 2>/dev/null || "$BT/aapt" dump permissions "$FILE" > "$WORK/permissions.txt"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$FILE" > "$WORK/xmltree.txt"
+          "$BT/aapt2" dump badging "$FILE" > "$WORK/badging.txt" 2>/dev/null || true
+          SETTINGS="$(jq -nc --arg allowFile "$ALLOW_FILE" --arg deny "$DENY" --arg forbid "$FORBID" --arg require "$REQUIRE" --arg backup "$BACKUP" --arg min "$MIN_SDK" \
+            '{allowFile: $allowFile, forbid: $forbid, require: $require, backup: $backup, minTargetSdk: (($min | tonumber?) // 0)} + (if $deny != "" then {deny: $deny} else {} end)')"
+          RES="$(node "$GITHUB_ACTION_PATH/contents.mjs" "$WORK/permissions.txt" "$WORK/xmltree.txt" "$WORK/badging.txt" "$SETTINGS")"
+          # shellcheck disable=SC2016 # обратные кавычки — разметка сводки
+          { echo ""; echo "Разрешения:"; jq -r '.permissions[] | "- `" + . + "`"' <<< "$RES"; echo ""; echo "target API: $(jq -r '.targetSdk // "?"' <<< "$RES")"; } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.permissions[]' <<< "$RES"
+          while IFS= read -r e; do [ -n "$e" ] && { echo "::error::$e"; FAIL=1; }; done < <(jq -r '.errors[]' <<< "$RES")
+        fi
+        exit "$FAIL"

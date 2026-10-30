@@ -1,0 +1,55 @@
+# Подпись проверяется на готовом файле, а не по настройкам: «должен был подписаться» и
+# «подписан» — разные вещи. Отпечаток постоянного ключа закрепляется переменной репозитория
+# ANDROID_CERT_SHA256: чужой ключ останавливает сборку. Файл ключа после сборки удаляется.
+name: Подпись Android
+description: Проверяет подпись готового APK или AAB — отпечаток сертификата и что ключ не отладочный.
+inputs:
+  file:
+    description: Путь к .apk или .aab
+    required: true
+  expected:
+    description: Закреплённый SHA-256 сертификата (переменная ANDROID_CERT_SHA256); пусто — не сверять
+    required: false
+    default: ''
+  permanent:
+    description: Подложен ли постоянный ключ (выход permanent действия android-keystore)
+    required: true
+  keystore-file:
+    description: Файл ключа, который удалить (выход file действия android-keystore)
+    required: false
+    default: ''
+outputs:
+  sha256:
+    description: SHA-256 сертификата
+    value: ${{ steps.cert.outputs.sha256 }}
+  label:
+    description: Чем подписан — для заметок выпуска
+    value: ${{ steps.cert.outputs.label }}
+runs:
+  using: composite
+  steps:
+    - id: cert
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+        EXPECTED: ${{ inputs.expected }}
+        PERMANENT: ${{ inputs.permanent }}
+        KEYSTORE: ${{ inputs.keystore-file }}
+      run: |
+        set -euo pipefail
+        [ -n "$KEYSTORE" ] && rm -f "$KEYSTORE"
+        BT="$ANDROID_HOME/build-tools/$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort -V | tail -n1)"
+        OUT="$RUNNER_TEMP/signature.txt"
+        # APK подписан схемой v2+ — её читает apksigner; AAB — JAR-подписью, её читает keytool.
+        # Вывод печатается целиком: в нём только открытые данные сертификата.
+        case "$FILE" in
+          *.aab) keytool -printcert -jarfile "$FILE" > "$OUT" 2>&1 || true ;;
+          *) "$BT/apksigner" verify --print-certs "$FILE" > "$OUT" 2>&1 || true ;;
+        esac
+        cat "$OUT"
+        RES="$(node "$GITHUB_ACTION_PATH/signature.mjs" "$OUT" "$EXPECTED" "$PERMANENT")"
+        if [ "$(jq -r .ok <<< "$RES")" != true ]; then echo "::error::$(jq -r .error <<< "$RES")"; exit 1; fi
+        CERT="$(jq -r .cert <<< "$RES")"; LABEL="$(jq -r .label <<< "$RES")"
+        echo "sha256=$CERT" >> "$GITHUB_OUTPUT"
+        echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+        { echo "### Подпись $(basename "$FILE")"; echo ""; echo "Подписан $LABEL; SHA-256 сертификата: \`$CERT\`"; } >> "$GITHUB_STEP_SUMMARY"

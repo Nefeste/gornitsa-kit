@@ -1,0 +1,71 @@
+# Постоянный ключ подписи (ADR студии 0006). Раскладывает файл ключа из секрета во временную
+# папку и называет его Gradle через ORG_GRADLE_PROJECT_<PREFIX>_UPLOAD_STORE_FILE — так его
+# читает плагин подписи игры (plugins/with-release-signing.js). Пароли и псевдоним игра
+# передаёт шагу сборки сама, переменными ORG_GRADLE_PROJECT_<PREFIX>_UPLOAD_* — в файлы они не
+# пишутся. Нет файла ключа — `permanent=no`, плагин оставит отладочную подпись шаблона.
+# Файл ключа удаляет действие android-signature (вход `keystore-file`).
+name: Ключ подписи Android
+description: Раскладывает постоянный ключ подписи из секрета для сборки Gradle.
+inputs:
+  keystore-base64:
+    description: Файл ключа (.jks) в base64 — секрет ANDROID_KEYSTORE_BASE64
+    required: false
+    default: ''
+  store-password:
+    description: Пароль хранилища
+    required: false
+    default: ''
+  key-alias:
+    description: Псевдоним ключа
+    required: false
+    default: ''
+  key-password:
+    description: Пароль ключа
+    required: false
+    default: ''
+  gradle-prefix:
+    description: Приставка свойств Gradle, как в плагине подписи игры, например NARDY
+    required: true
+outputs:
+  permanent:
+    description: yes — ключ разложен; no — секретов нет, подпись отладочная
+    value: ${{ steps.key.outputs.permanent }}
+  file:
+    description: Путь к файлу ключа (удалить после сборки)
+    value: ${{ steps.key.outputs.file }}
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        KEYSTORE_B64: ${{ inputs.keystore-base64 }}
+        KEYSTORE_PASSWORD: ${{ inputs.store-password }}
+        KEY_ALIAS: ${{ inputs.key-alias }}
+        KEY_PASSWORD: ${{ inputs.key-password }}
+        PREFIX: ${{ inputs.gradle-prefix }}
+      run: |
+        set -euo pipefail
+        if ! [[ "$PREFIX" =~ ^[A-Z][A-Z0-9_]*$ ]]; then echo "::error::gradle-prefix «$PREFIX»: только заглавные латинские буквы, цифры и «_»."; exit 1; fi
+        have() { [ -n "$1" ] && echo "есть" || echo "нет"; }
+        {
+          echo "### Ключ подписи"
+          echo "- файл ключа: $(have "$KEYSTORE_B64")"
+          echo "- пароль хранилища: $(have "$KEYSTORE_PASSWORD"); псевдоним: $(have "$KEY_ALIAS"); пароль ключа: $(have "$KEY_PASSWORD")"
+        } >> "$GITHUB_STEP_SUMMARY"
+        if [ -z "$KEYSTORE_B64" ]; then
+          echo "permanent=no" >> "$GITHUB_OUTPUT"
+          echo "file=" >> "$GITHUB_OUTPUT"
+          echo "Секретов ключа нет — подпись отладочным ключом шаблона."
+          exit 0
+        fi
+        if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+          echo "::error::Файл ключа есть, но не хватает пароля хранилища, псевдонима или пароля ключа."
+          exit 1
+        fi
+        FILE="$RUNNER_TEMP/release-$(tr 'A-Z_' 'a-z-' <<< "$PREFIX").jks"
+        # файл ключа — в base64; переносы строк, если их вставили вместе с ключом, не мешают
+        printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$FILE"
+        echo "ORG_GRADLE_PROJECT_${PREFIX}_UPLOAD_STORE_FILE=$FILE" >> "$GITHUB_ENV"
+        echo "permanent=yes" >> "$GITHUB_OUTPUT"
+        echo "file=$FILE" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,54 @@
+# Автослияние PR по метке «ревью: ок» (ADR студии 0018). Вызывать из workflow, который
+# запускается на `pull_request_target` и `workflow_run` проверок PR и выгрузил `.github` из
+# main (CODEOWNERS не должен браться из PR). Проще — через переиспользуемый workflow набора
+# `.github/workflows/automerge.yml`: он делает всё это сам.
+name: Автослияние
+description: 'Сливает PR (squash) с меткой «ревью: ок» на одобренном коммите, когда проверки зелёные и нет путей владельца.'
+inputs:
+  token:
+    description: Токен слияния — секрет AUTOMERGE_TOKEN владельца или токен Actions
+    required: true
+  bot-token:
+    description: Токен Actions (github.token) — комментарии и метки
+    required: true
+  own-token:
+    description: true, если token — личный токен владельца (тогда workflow после слияния запустятся сами)
+    required: false
+    default: 'false'
+  label:
+    description: Метка ревьюера
+    required: false
+    default: 'ревью: ок'
+  check:
+    description: Имя обязательной проверки PR (задание pr.yml), например «Типы, линтер, тесты»
+    required: true
+  codeowners:
+    description: Путь к CODEOWNERS, выгруженному из main
+    required: false
+    default: .github/CODEOWNERS
+  dispatch:
+    description: Workflow через пробел, которые запустить после слияния (например «server.yml»)
+    required: false
+    default: ''
+  dispatch-paths:
+    description: Регулярное выражение путей PR, при которых запускать dispatch; пусто — всегда
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BOT_TOKEN: ${{ inputs.bot-token }}
+        OWN_TOKEN: ${{ inputs.own-token }}
+        LABEL: ${{ inputs.label }}
+        CHECK: ${{ inputs.check }}
+        MARK: automerge-sha
+        ACTION: ${{ github.event.action }}
+        ADDED: ${{ github.event.label.name }}
+        MAIN: ${{ github.event.repository.default_branch }}
+        CODEOWNERS: ${{ inputs.codeowners }}
+        DISPATCH: ${{ inputs.dispatch }}
+        DISPATCH_PATHS: ${{ inputs.dispatch-paths }}
+      run: OWNED_JS="$GITHUB_ACTION_PATH/owned.mjs" "$GITHUB_ACTION_PATH/automerge.sh"

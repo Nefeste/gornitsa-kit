@@ -1,0 +1,41 @@
+# Загрузка APK в черновик новой версии RuStore. Скрипт — upload.mjs рядом.
+# Первую версию приложения RuStore принимает только через консоль: действие — для второй и
+# следующих. На модерацию черновик уходит только с `submit: true`.
+name: Загрузка в RuStore
+description: Загружает APK в черновик новой версии приложения в RuStore Консоли по ключу API.
+inputs:
+  package:
+    description: Идентификатор приложения, например games.gornitsa.nardy
+    required: true
+  file:
+    description: Путь к APK
+    required: true
+  submit:
+    description: Сразу отправить черновик на модерацию
+    required: false
+    default: 'false'
+  key-id:
+    description: Номер ключа API RuStore (RUSTORE_KEY_ID)
+    required: true
+  api-token:
+    description: Приватный ключ API RuStore (секрет RUSTORE_API_TOKEN, base64 из консоли)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+    - name: В RuStore
+      shell: bash
+      env:
+        RUSTORE_KEY_ID: ${{ inputs.key-id }}
+        RUSTORE_API_TOKEN: ${{ inputs.api-token }}
+        PKG: ${{ inputs.package }}
+        FILE: ${{ inputs.file }}
+        SUBMIT: ${{ inputs.submit }}
+      run: |
+        set -euo pipefail
+        ARGS=(--package "$PKG" "$FILE")
+        [ "$SUBMIT" = true ] && ARGS+=(--submit)
+        node "$GITHUB_ACTION_PATH/upload.mjs" "${ARGS[@]}"

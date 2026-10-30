@@ -1,0 +1,113 @@
+# Переиспользуемый workflow: APK из выпуска на странице Releases → черновик новой версии в
+# RuStore. Игра вызывает его из своего .github/workflows/rustore.yml (ручной запуск):
+#
+#   on:
+#     workflow_dispatch:
+#       inputs:
+#         tag: { description: 'Тег выпуска (пусто — последний)', required: false, default: '' }
+#         submit: { description: 'Сразу отправить на модерацию', type: boolean, default: false }
+#   permissions:
+#     contents: read
+#   jobs:
+#     upload:
+#       uses: Nefeste/gornitsa-kit/.github/workflows/rustore.yml@v1
+#       with:
+#         package: games.gornitsa.nardy
+#         apk: 'nardy-*.apk'
+#         tag: ${{ inputs.tag }}
+#         submit: ${{ inputs.submit }}
+#         key-id: ${{ vars.RUSTORE_KEY_ID }}
+#       secrets:
+#         RUSTORE_API_TOKEN: ${{ secrets.RUSTORE_API_TOKEN }}
+#         RUSTORE_KEY_ID: ${{ secrets.RUSTORE_KEY_ID }}
+#
+# Номер ключа — переменная или секрет RUSTORE_KEY_ID (годится любое), приватный ключ — только
+# секрет RUSTORE_API_TOKEN. Первую версию приложения RuStore принимает только через консоль.
+name: RuStore
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Идентификатор приложения (games.gornitsa.<игра>)
+        type: string
+        required: true
+      apk:
+        description: Шаблон имени APK в выпуске, например 'nardy-*.apk'
+        type: string
+        required: true
+      tag:
+        description: Тег выпуска; пусто — последний
+        type: string
+        required: false
+        default: ''
+      prereleases:
+        description: Брать ли пре-релизы, когда тег не задан (у «Нард» выпуск — пре-релиз)
+        type: boolean
+        required: false
+        default: false
+      submit:
+        description: Сразу отправить черновик на модерацию
+        type: boolean
+        required: false
+        default: false
+      key-id:
+        description: Номер ключа API, если он в переменной репозитория
+        type: string
+        required: false
+        default: ''
+    secrets:
+      RUSTORE_API_TOKEN:
+        required: true
+      RUSTORE_KEY_ID:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: В RuStore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: APK из выпуска
+        id: apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PATTERN: ${{ inputs.apk }}
+          PRE: ${{ inputs.prereleases }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAG" ]; then
+            FLAGS=(--exclude-drafts)
+            [ "$PRE" = true ] || FLAGS+=(--exclude-pre-releases)
+            TAG="$(gh release list --repo "$GITHUB_REPOSITORY" "${FLAGS[@]}" --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          if [ -z "$TAG" ]; then echo "::error::Выпусков нет — нечего загружать."; exit 1; fi
+          echo "Выпуск: $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$PATTERN" --dir dist
+          N="$(find dist -name '*.apk' | wc -l)"
+          if [ "$N" != 1 ]; then echo "::error::В выпуске $TAG по шаблону «$PATTERN» нашлось APK: $N, нужен ровно один."; ls -la dist; exit 1; fi
+          echo "file=$(find dist -name '*.apk')" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: Nefeste/gornitsa-kit/actions/rustore-upload@v1
+        with:
+          package: ${{ inputs.package }}
+          file: ${{ steps.apk.outputs.file }}
+          submit: ${{ inputs.submit }}
+          key-id: ${{ inputs.key-id || secrets.RUSTORE_KEY_ID }}
+          api-token: ${{ secrets.RUSTORE_API_TOKEN }}
+      - name: Итог
+        env:
+          FILE: ${{ steps.apk.outputs.file }}
+          TAG: ${{ steps.apk.outputs.tag }}
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          {
+            echo "### RuStore"
+            echo ""
+            echo "Загружен \`$(basename "$FILE")\` из выпуска \`$TAG\`."
+            if [ "$SUBMIT" = true ]; then echo "Черновик отправлен на модерацию."; else echo "Черновик ждёт в консоли: проверить «Что нового» и отправить на модерацию."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
