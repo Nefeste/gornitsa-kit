@@ -23,9 +23,9 @@
 
 | Игра | `package` | `apk` | автослияние: `workflows` / `check` | `dispatch` | `gradle-prefix` |
 |---|---|---|---|---|---|
-| «Вотчина» | `com.votchina.game` | `votchina-*.apk` | `PR` / `Типы, линтер, тесты` | `server.yml worker.yml`, пути `^(src/\|App\.tsx$\|app\.config\.js$\|package(-lock)?\.json$\|tools/e2e/server\.ts$)` | `VOTCHINA` |
-| «Нарды» | `games.gornitsa.nardy` | `nardy-*.apk` | `Проверки PR` / `Типы, линтер, тесты` | — (пути сервера — пути владельца) | `NARDY` |
-| «Сказы» | `games.gornitsa.skazy` | `skazy-*.apk` | `PR` / `Проверки PR` | `server.yml`, пути — `paths` его `server.yml` | `SKAZY` |
+| «Вотчина» | `com.votchina.game` (`prereleases: true`) | `votchina-*.apk` | `PR` / `Типы, линтер, тесты` | `server.yml worker.yml`, пути `^(src/\|App\.tsx$\|app\.config\.js$\|package(-lock)?\.json$\|tools/e2e/server\.ts$)` | `VOTCHINA` |
+| «Нарды» | `games.gornitsa.nardy` (`prereleases: true`) | `nardy-*.apk` | `Проверки PR` / `Типы, линтер, тесты` | — (сервер выкладывают руками; нужен ли `dispatch` — решение владельца) | `NARDY` |
+| «Сказы» | `games.gornitsa.skazy` | `skazy-*.apk` | `PR` / `Проверки PR` | `server.yml`, пути `^(server/\|src/engine/\|src/content/\|src/state/protocol\.ts$\|content/\|tools/content/\|package-lock\.json$\|\.github/workflows/server\.yml$)` | `SKAZY` |
 | «Анамнез» | `games.gornitsa.anamnez` | `anamnez-*.apk` | `PR` / `Проверки PR` | — | `ANAMNEZ` |
 | «Узоры» | `games.gornitsa.uzory` | `uzory-*.apk` | `PR` / `Типы, линтер и тесты` | — | `UZORY` |
 | «Сени» | — | — | `CI` / `Тесты и типы` | — (машина сама забирает `main`) | — |
@@ -35,12 +35,12 @@
 | Игра | `allow-file` (что в нём) | `forbid` | `require` | `backup` | `min-target-sdk` | прочее |
 |---|---|---|---|---|---|---|
 | «Вотчина» | INTERNET, VIBRATE, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE, `com.votchina.game.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | — | — (игра не проверяла) | `off` | — | у неё ещё свои проверки бандла («Поддержать», почта) — остаются шагом игры |
-| «Нарды» | `.github/apk-permissions.txt` уже есть | — | `INTERNET` | `off` | — | — |
-| «Сказы» | INTERNET, ACCESS_NETWORK_STATE, VIBRATE, MODIFY_AUDIO_SETTINGS, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, `games.gornitsa.skazy.*` | `FOREGROUND_SERVICE\|INSTALL_REFERRER\|WAKE_LOCK` | `INTERNET` | `off` | 36 | `only-arm64: true` |
+| «Нарды» | `.github/apk-permissions.txt` уже есть (с `com.google.android.gms.permission.AD_ID` для рекламы Яндекса) | — | `^android\.permission\.INTERNET$` | **`any`** (с 1.1.2 `allowBackup: true`, ADR игры 0024) | — | `deny` — список студии **без `AD_ID`**; `align-16k: false` (игра не проверяла) |
+| «Сказы» | INTERNET, ACCESS_NETWORK_STATE, VIBRATE, MODIFY_AUDIO_SETTINGS, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, `games.gornitsa.skazy.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `FOREGROUND_SERVICE\|INSTALL_REFERRER\|WAKE_LOCK` | — (игра не проверяла) | `off` | 36 | `only-arm64: true` |
 | «Анамнез» | VIBRATE, MODIFY_AUDIO_SETTINGS, `games.gornitsa.anamnez.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `INTERNET\|NETWORK_STATE\|FOREGROUND_SERVICE\|INSTALL_REFERRER` | — | **`any`** (игра не проверяла; `allowBackup` в `app.json` не задан — значит, включён) | 36 | `only-arm64: true`, `max-size-mb: 100` |
 | «Узоры» | INTERNET, ACCESS_NETWORK_STATE, VIBRATE, MODIFY_AUDIO_SETTINGS, `games.gornitsa.uzory.*` | `READ_MEDIA\|FOREGROUND_SERVICE\|INSTALL_REFERRER\|WAKE_LOCK` | `INTERNET` | **`on`** (автобэкап работ, ADR игры) | 36 | `max-size-mb: 90` |
 
-**Сверять с нынешним шагом игры, а не с этой таблицей:** `backup: off` (по умолчанию) роняет
+**Сверять с нынешним шагом игры, а не с этой таблицей** (так при переводе и нашлись поправки выше): `backup: off` (по умолчанию) роняет
 сборку, если в манифесте нет `android:allowBackup="false"`; новая проверка, которой у игры не было, —
 только с решением в PR.
 
@@ -65,6 +65,8 @@
 | «Сени» | Nefeste/seni#43 |
 | «Анамнез» | Nefeste/anamnez#193 |
 | «Вотчина» | Nefeste/votchina#56 |
+| «Сказы» | Nefeste/skazy#113 |
+| «Нарды» | Nefeste/nardy#97 |
 
 ## RuStore Pay (1.1.0)
 
