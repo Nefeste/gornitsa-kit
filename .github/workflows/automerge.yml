@@ -1,0 +1,88 @@
+# Переиспользуемый workflow автослияния (ADR студии 0018): PR с меткой «ревью: ок» сливается сам —
+# squash, — когда проверки PR зелёные и в нём нет путей владельца из .github/CODEOWNERS.
+# Путь владельца в PR — метка ничего не делает: такой PR сливает владелец.
+#
+# Безопасность — три правила (из «Вотчины»):
+# - Вызывающий workflow запускается на `pull_request_target` и `workflow_run`: оба берут его
+#   из main. С `pull_request` GitHub взял бы файл из PR, и PR с правкой автослияния слил бы
+#   сам себя. Код PR здесь не запускается никогда: выгружается только `.github` из main.
+# - Метка одобряет коммит, а не PR: бот пишет в PR комментарий с хешем коммита, и слить можно
+#   только этот коммит (`--match-head-commit`). Новый коммит снимает метку.
+# - Разбор CODEOWNERS — из набора (`actions/automerge/owned.mjs`), сам CODEOWNERS — из main.
+#
+# Вызов в игре — `.github/workflows/automerge.yml`:
+#
+#   name: Автослияние
+#   on:
+#     pull_request_target:
+#       types: [labeled, unlabeled, synchronize, ready_for_review]
+#     workflow_run:
+#       workflows: [PR]          # имя workflow проверок PR
+#       types: [completed]
+#   permissions:
+#     contents: write
+#     pull-requests: write
+#     issues: write
+#     actions: write             # только если нужен dispatch
+#     checks: read
+#   concurrency:
+#     group: automerge-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch }}
+#     cancel-in-progress: false
+#   jobs:
+#     automerge:
+#       if: ${{ github.event_name == 'pull_request_target' || github.event.workflow_run.event == 'pull_request' }}
+#       uses: Nefeste/gornitsa-kit/.github/workflows/automerge.yml@v1
+#       with:
+#         check: 'Типы, линтер, тесты'
+#       secrets:
+#         AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+name: Автослияние
+
+on:
+  workflow_call:
+    inputs:
+      check:
+        description: Имя обязательной проверки PR (задание pr.yml)
+        type: string
+        required: true
+      label:
+        description: Метка ревьюера
+        type: string
+        required: false
+        default: 'ревью: ок'
+      dispatch:
+        description: Workflow через пробел, которые запустить после слияния токеном Actions
+        type: string
+        required: false
+        default: ''
+      dispatch-paths:
+        description: Регулярное выражение путей PR, при которых запускать dispatch; пусто — всегда
+        type: string
+        required: false
+        default: ''
+    secrets:
+      AUTOMERGE_TOKEN:
+        description: Необязательный личный токен владельца — слияние от его имени
+        required: false
+
+jobs:
+  automerge:
+    name: Автослияние
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # только правила из main — CODEOWNERS, без кода PR
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: Nefeste/gornitsa-kit/actions/automerge@v1
+        with:
+          token: ${{ secrets.AUTOMERGE_TOKEN || github.token }}
+          bot-token: ${{ github.token }}
+          own-token: ${{ secrets.AUTOMERGE_TOKEN != '' }}
+          label: ${{ inputs.label }}
+          check: ${{ inputs.check }}
+          dispatch: ${{ inputs.dispatch }}
+          dispatch-paths: ${{ inputs.dispatch-paths }}
