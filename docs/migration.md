@@ -34,11 +34,15 @@
 
 | Игра | `allow-file` (что в нём) | `forbid` | `require` | `backup` | `min-target-sdk` | прочее |
 |---|---|---|---|---|---|---|
-| «Вотчина» | INTERNET, VIBRATE, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE, `com.votchina.game.*` | — | `INTERNET` | `off` | — | у неё ещё свои проверки бандла («Поддержать», почта) — остаются шагом игры |
+| «Вотчина» | INTERNET, VIBRATE, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE, `com.votchina.game.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | — | — (игра не проверяла) | `off` | — | у неё ещё свои проверки бандла («Поддержать», почта) — остаются шагом игры |
 | «Нарды» | `.github/apk-permissions.txt` уже есть | — | `INTERNET` | `off` | — | — |
 | «Сказы» | INTERNET, ACCESS_NETWORK_STATE, VIBRATE, MODIFY_AUDIO_SETTINGS, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED, `games.gornitsa.skazy.*` | `FOREGROUND_SERVICE\|INSTALL_REFERRER\|WAKE_LOCK` | `INTERNET` | `off` | 36 | `only-arm64: true` |
-| «Анамнез» | VIBRATE, MODIFY_AUDIO_SETTINGS, `games.gornitsa.anamnez.*` | `INTERNET\|NETWORK_STATE\|FOREGROUND_SERVICE\|INSTALL_REFERRER` | — | `off` | 36 | `only-arm64: true`, `max-size-mb: 100` |
+| «Анамнез» | VIBRATE, MODIFY_AUDIO_SETTINGS, `games.gornitsa.anamnez.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `INTERNET\|NETWORK_STATE\|FOREGROUND_SERVICE\|INSTALL_REFERRER` | — | **`any`** (игра не проверяла; `allowBackup` в `app.json` не задан — значит, включён) | 36 | `only-arm64: true`, `max-size-mb: 100` |
 | «Узоры» | INTERNET, ACCESS_NETWORK_STATE, VIBRATE, MODIFY_AUDIO_SETTINGS, `games.gornitsa.uzory.*` | `READ_MEDIA\|FOREGROUND_SERVICE\|INSTALL_REFERRER\|WAKE_LOCK` | `INTERNET` | **`on`** (автобэкап работ, ADR игры) | 36 | `max-size-mb: 90` |
+
+**Сверять с нынешним шагом игры, а не с этой таблицей:** `backup: off` (по умолчанию) роняет
+сборку, если в манифесте нет `android:allowBackup="false"`; новая проверка, которой у игры не было, —
+только с решением в PR.
 
 Номер приложения RuStore в манифесте («Узоры» сверяют его по `console_app_id_value`) и проверки
 бандла «Вотчины» остаются шагами игр: они не общие.
@@ -53,3 +57,34 @@
   (`prereleases: true` — с ними).
 - **После слияния** автослияние ждёт до минуты, пока GitHub сольёт PR, и только потом запускает
   `dispatch` (так делают «Сказы»).
+
+## PR перевода CI
+
+| Игра | PR |
+|---|---|
+| «Сени» | Nefeste/seni#43 |
+| «Анамнез» | Nefeste/anamnez#193 |
+| «Вотчина» | Nefeste/votchina#56 |
+
+## RuStore Pay (1.1.0)
+
+Игры с RuStore Pay — «Нарды», «Сказы», «Узоры». Перевод — после тега `v1.1.0`, по одной игре:
+
+1. `npm install github:Nefeste/gornitsa-kit#v1.1.0` — в `package.json` встаёт
+   `"@gornitsa/kit": "github:Nefeste/gornitsa-kit#v1.1.0"`, в `package-lock.json` — коммит.
+2. В `app.json` вместо `./plugins/with-rustore` — `["@gornitsa/kit/rustore-pay/plugin", {…}]`;
+   `plugins/with-rustore.js` удаляется (у «Нард» модуль оценки остаётся своим, ему нужен только
+   maven RuStore — `otherStore: "maven"`).
+3. `src/money/rustore.ts` — реэкспорт из `@gornitsa/kit/rustore-pay` (или удаляется, а импорты
+   переходят на пакет); общая часть правил (`rsCode`, `rsText`, `rsDetail`, причины, покупка)
+   — из пакета, права по списку покупок остаются в игре.
+4. Тесты плагина и обёртки в игре сокращаются до того, что своё: настройки в `app.json` и права.
+
+| Игра | `scheme` | `noAppId` | `otherStore` | тема шторки |
+|---|---|---|---|---|
+| «Нарды» | `gornitsanardypay` | `stub` | `maven` (оценка в RuStore) | `DARK` |
+| «Сказы» | `gornitsaskazypay` | `stub` | `skip` | `LIGHT` |
+| «Узоры» | `gornitsauzorypay` | `skip` | `skip` | `LIGHT` |
+
+**Схема — вечная:** она в манифесте выпущенных сборок и в возврате из приложения банка; менять её
+нельзя.
