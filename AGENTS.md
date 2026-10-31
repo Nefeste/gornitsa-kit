@@ -1,7 +1,8 @@
-This repository is `gornitsa-kit`, the shared CI kit of the «Горница» studio: composite actions and
+This repository is `gornitsa-kit`, the shared kit of the «Горница» studio: composite actions and
 reusable workflows (`workflow_call`) that the studio's games call instead of keeping copies —
 RuStore upload, auto-merge by the `ревью: ок` label, Android signing key, signature and APK contents
-checks. Documents are in Russian; this file is in English.
+checks — and, since 1.1.0, the npm package `@gornitsa/kit` installed from a git tag: RuStore Pay
+for the app (`rustore-pay/`: Expo config plugin, wrapper types, purchase and error rules). Documents are in Russian; this file is in English.
 
 ## Studio charter — read first
 
@@ -42,6 +43,13 @@ CI starts living here. What moves from copies into the kit, and when, is decided
   or run PR code in it.
 - Scripts are plain Node 22 ESM without dependencies; logic that can be tested lives in `.mjs` files
   with exported functions and tests in `test/` (`node --test test/*.test.mjs`), shell stays thin.
+- `rustore-pay/` is plain JavaScript with hand-written `.d.ts`, no build step and no dependencies:
+  React Native and Expo come from the game. The config plugin is CommonJS (`plugin.cjs`) and requires
+  `expo/config-plugins` only inside the plugin function, so tests run without Expo. Only
+  `rustore-pay/` ships to games (`files` in `package.json`).
+- RuStore Pay wrapper methods and their argument counts are pinned to the wrapper version in
+  `plugin.cjs` (`PAY`); a new wrapper version means re-checking them (javap of the AAR) — never from
+  memory. Never add `updateAcknowledgementState` back (it breaks payments in 11.1.0).
 
 ## Commands
 

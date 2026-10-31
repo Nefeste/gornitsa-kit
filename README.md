@@ -1,8 +1,9 @@
-# gornitsa-kit — общий CI студии «Горница»
+# gornitsa-kit — общий набор студии «Горница»
 
 Готовые шаги GitHub Actions для игр студии: загрузка в RuStore, автослияние по метке
-«ревью: ок», ключ подписи Android, проверка подписи и содержимого APK. Раньше каждая игра
-держала свою копию этих шагов. Теперь копия одна — здесь, а игры её вызывают.
+«ревью: ок», ключ подписи Android, проверка подписи и содержимого APK. С версии 1.1.0 — и
+RuStore Pay для приложения: плагин сборки, типы обёртки и покупка. Раньше каждая игра
+держала свою копию. Теперь копия одна — здесь, а игры её вызывают.
 
 Почему так: ADR студии [0002](https://github.com/Nefeste/gornitsa/blob/main/adr/0002-copy-not-share.md)
 (пересмотр от 03.10.2026, решение владельца №14). Код игр по-прежнему копируется с пометкой
@@ -22,6 +23,7 @@
 | [`actions/android-keystore`](actions/android-keystore/action.yml) | действие | шаг «Ключ подписи» / «Файл ключа» в `android.yml` |
 | [`actions/android-signature`](actions/android-signature/action.yml) | действие | шаг «Подпись» / «Check the signature» |
 | [`actions/android-contents`](actions/android-contents/action.yml) | действие | шаг «Содержимое» / «Check the contents» / «Check the permissions» |
+| [`rustore-pay/`](rustore-pay/) | пакет `@gornitsa/kit` для приложения | `plugins/with-rustore.js`, `src/money/rustore.ts` и общую часть правил ответов RuStore |
 
 **Workflow** — целое задание, его вызывают из своего workflow строкой `uses:` на уровне задания.
 **Действие** — шаг внутри своего задания, его вызывают `uses:` на уровне шага. Сборку APK набор
@@ -162,6 +164,58 @@ jobs:
 - выравнивание 64-битных библиотек на 16 КБ (`align-16k`), лишние архитектуры (`only-arm64`), размер (`max-size-mb`);
 - для AAB — только то, что не зависит от манифеста.
 
+### RuStore Pay в приложении
+
+Пакет `@gornitsa/kit` ставится из этого репозитория по тегу — в `package.json` игры:
+
+```json
+"@gornitsa/kit": "github:Nefeste/gornitsa-kit#v1.1.0"
+```
+
+`npm install` записывает в `package-lock.json` точный коммит, `npm ci` в CI берёт его. В игру
+попадает только папка `rustore-pay/` (поле `files`), зависимостей у пакета нет: React Native и
+Expo — игры.
+
+Плагин сборки — в `app.json`:
+
+```json
+["@gornitsa/kit/rustore-pay/plugin", { "scheme": "gornitsanardypay", "otherStore": "maven" }]
+```
+
+| Настройка | Что это |
+|---|---|
+| `scheme` | схема возврата из приложения банка после оплаты (СБП, SberPay): `gornitsa<игра>pay`, вечная, как идентификатор приложения |
+| `noAppId` | без `EXPO_PUBLIC_RUSTORE_APP_ID`: `stub` — SDK встаёт с номером 0, игра не трогает оплату (по умолчанию, «Нарды», «Сказы»); `skip` — не вписывать ничего («Узоры») |
+| `otherStore` | сборка `EXPO_PUBLIC_STORE=other`: `skip` — без RuStore (по умолчанию); `maven` — только репозиторий RuStore, если он нужен другому модулю (оценка в «Нардах») |
+
+Плагин вписывает maven RuStore (только группы `ru.rustore`), зависимость обёртки
+`ru.rustore.sdk-wrapper.react-native:pay:11.1.0`, пакет в `MainApplication`, возврат из банка
+в `MainActivity` и в манифест — номер приложения и схему. Шаблон Expo изменился — сборка
+останавливается, а не собирает APK без оплаты.
+
+В коде игры:
+
+```ts
+import { pay, buy, reasonOf, causeReasonOf, rsDetail, type RsPurchase } from '@gornitsa/kit/rustore-pay';
+
+const r = await buy(pay!, 'no_ads', 'DARK');   // одна стадия, без почты и id игрока
+if (!r.ok && !r.cancelled) show(r.reason, r.detail);
+```
+
+- `pay` — нативный модуль или `null` (Expo Go, веб, сборка без плагина); типы методов —
+  ровно обёртка 11.1.0, с явными `null`: другое число аргументов новая архитектура React Native
+  не прощает.
+- **Отметки «товар выдан» (`updateAcknowledgementState`) в наборе нет.** В обёртке 11.1.0 она
+  ломает оплату: с двумя аргументами прошедшая оплата выглядит «Оплата не прошла», с тремя
+  приложение падает («Нарды» 1.1.0 и 1.1.2). Отметка необязательна — права берутся из списка
+  покупок.
+- `reasonOf(e)` и `causeReasonOf(cause)` — причина по коду ошибки или по тексту отказа
+  `getPurchaseAvailability`: `no-rustore`, `outdated`, `not-signed-in`, `no-app-id`, `no-scheme`,
+  `offline`. Слова для игрока — в `src/i18n` игры.
+- Какой товар что открывает (`ownedOf` по списку покупок) у каждой игры своё и остаётся в игре.
+- Правила `rustore-pay/rules.js` без React Native — их импортируют тесты игр под Bun:
+  `@gornitsa/kit/rustore-pay/rules`.
+
 ## Правила набора
 
 - **Совместимость внутри мажорной версии.** Новый вход — только со значением по умолчанию,
@@ -171,7 +225,7 @@ jobs:
   Теги ставит тоже владелец.
 - **Репозиторий открытый** (ADR студии 0017): ни секретов, ни внутренних адресов в коде, тестах
   и примерах. Секреты приходят только входами и `secrets:` вызывающего workflow.
-- **Логика — в `.mjs` с тестами**, оболочка — тонкая. Перед каждым push:
+- **Логика — в `.mjs` и `rustore-pay/` с тестами**, оболочка — тонкая. Перед каждым push:
   `node --test test/*.test.mjs` и `shellcheck -S warning actions/automerge/automerge.sh`.
   CI набора ещё прогоняет `actionlint`.
 
@@ -183,3 +237,5 @@ jobs:
 | `actions/automerge/automerge.sh`, `.github/workflows/automerge.yml` | `Nefeste/votchina: .github/workflows/automerge.yml @ fe98c02` — константы стали входами; ожидание слияния перед запуском workflow — из «Сказов» |
 | `actions/automerge/owned.mjs` | `Nefeste/votchina: .github/scripts/owned.mjs @ 0605847` |
 | `actions/android-*` | шаги `android.yml` «Вотчины», «Нард», «Сказов», «Анамнеза», «Узоров» |
+| `rustore-pay/plugin.cjs` | `Nefeste/nardy: plugins/with-rustore.js @ 08bdc90` — настройки игр стали параметрами; maven только для `ru.rustore` — из «Сказов» |
+| `rustore-pay/index.*`, `rules.*` | `Nefeste/nardy: src/money/rustore.ts`, `src/money/rustoreRules.ts @ 08bdc90` — общая часть |
