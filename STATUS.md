@@ -5,7 +5,8 @@
 
 **Что внутри:** загрузка в RuStore и автослияние — переиспользуемыми workflow и действиями;
 ключ подписи, проверка подписи и содержимого APK — действиями для `android.yml` игр;
-RuStore Pay для приложения — пакет `@gornitsa/kit` (`rustore-pay/`) ([`README.md`](README.md)).
+RuStore Pay для приложения — пакет `@gornitsa/kit` (`rustore-pay/`); версия рекламы Яндекса для всех игр —
+`yandex-ads/` (8.6.0, в `main` после слияния PR; тег 1.2.0 — владельца) ([`README.md`](README.md)).
 Тестов — 24, без сети.
 
 **Где используется** ([`docs/migration.md`](docs/migration.md)): CI — «Вотчина», «Нарды», «Сказы»,
