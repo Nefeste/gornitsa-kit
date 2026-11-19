@@ -2,7 +2,8 @@
 
 Готовые шаги GitHub Actions для игр студии: загрузка в RuStore, автослияние по метке
 «ревью: ок», ключ подписи Android, проверка подписи и содержимого APK. С версии 1.1.0 — и
-RuStore Pay для приложения: плагин сборки, типы обёртки и покупка. Раньше каждая игра
+RuStore Pay для приложения: плагин сборки, типы обёртки и покупка; с 1.2.0 — актуальная версия
+рекламы Яндекса для всех игр. Раньше каждая игра
 держала свою копию. Теперь копия одна — здесь, а игры её вызывают.
 
 Почему так: ADR студии [0002](https://github.com/Nefeste/gornitsa/blob/main/adr/0002-copy-not-share.md)
@@ -24,6 +25,7 @@ RuStore Pay для приложения: плагин сборки, типы о�
 | [`actions/android-signature`](actions/android-signature/action.yml) | действие | шаг «Подпись» / «Check the signature» |
 | [`actions/android-contents`](actions/android-contents/action.yml) | действие | шаг «Содержимое» / «Check the contents» / «Check the permissions» |
 | [`rustore-pay/`](rustore-pay/) | пакет `@gornitsa/kit` для приложения | `plugins/with-rustore.js`, `src/money/rustore.ts` и общую часть правил ответов RuStore |
+| [`yandex-ads/`](yandex-ads/) | пакет `@gornitsa/kit` для тестов игры | свою запись версии Yandex Mobile Ads SDK — версия одна на студию |
 
 **Workflow** — целое задание, его вызывают из своего workflow строкой `uses:` на уровне задания.
 **Действие** — шаг внутри своего задания, его вызывают `uses:` на уровне шага. Сборку APK набор
@@ -215,6 +217,33 @@ if (!r.ok && !r.cancelled) show(r.reason, r.detail);
 - Какой товар что открывает (`ownedOf` по списку покупок) у каждой игры своё и остаётся в игре.
 - Правила `rustore-pay/rules.js` без React Native — их импортируют тесты игр под Bun:
   `@gornitsa/kit/rustore-pay/rules`.
+
+### Реклама Яндекса: одна версия SDK
+
+Решение владельца 19.11.2026: версия Yandex Mobile Ads SDK — одна на все игры студии и живёт здесь,
+в [`yandex-ads/index.js`](yandex-ads/index.js) (`YANDEX_ADS.version`, сейчас **8.6.0**, сверено
+19.11.2026). Это версия, которая опубликована и в npm (`yandex-mobile-ads` — обёртка для React
+Native), и в Maven Central (`com.yandex.android:mobileads` — её тянет обёртка той же версии).
+РСЯ сообщает о новой версии раньше, чем она появляется там: 8.7.0, о которой РСЯ писала 19.11.2026,
+на этот день не было ни в npm, ни в Maven Central.
+
+Игра с рекламой проверяет себя в своих тестах (Bun):
+
+```ts
+import { checkAdsSdk } from '@gornitsa/kit/yandex-ads';
+import pkg from '../../package.json';
+
+test('Yandex Mobile Ads — не старше версии набора', () => expect(checkAdsSdk(pkg)).toBeNull());
+```
+
+`checkAdsSdk` молчит, если рекламы в игре нет, и называет команду обновления, если версия старше.
+
+**Новая версия SDK:**
+1. Проверить, что она есть и в npm (`npm view yandex-mobile-ads version`), и в Maven Central.
+2. PR сюда: поднять `version` и `checked`, запись в `CHANGELOG.md`.
+3. Владелец сливает и ставит тег.
+4. Каждая игра с рекламой поднимает `@gornitsa/kit` до нового тега: её тест падает, пока не выполнена
+   `npx expo install yandex-mobile-ads@<версия>`. Это не меняет `.github/` игры.
 
 ## Правила набора
 

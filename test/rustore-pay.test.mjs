@@ -161,11 +161,11 @@ test('ошибки SDK: код, причина по коду и по текст�
   assert.equal(rsDetail(err('ProductPurchaseException', 'Invoice expired')), 'ProductPurchaseException: Invoice expired');
 });
 
-test('пакет: в игру уходит только rustore-pay/, без зависимостей; ESM и плагин CommonJS', () => {
+test('пакет: в игру уходят только rustore-pay/ и yandex-ads/, без зависимостей; ESM и плагин CommonJS', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.name, '@gornitsa/kit');
   assert.equal(pkg.type, 'module');
-  assert.deepEqual(pkg.files, ['rustore-pay/']);
+  assert.deepEqual(pkg.files, ['rustore-pay/', 'yandex-ads/']);
   assert.equal(pkg.dependencies, undefined);
   assert.equal(typeof plugin, 'function');
 });

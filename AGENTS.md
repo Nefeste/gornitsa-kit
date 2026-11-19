@@ -46,7 +46,10 @@ CI starts living here. What moves from copies into the kit, and when, is decided
 - `rustore-pay/` is plain JavaScript with hand-written `.d.ts`, no build step and no dependencies:
   React Native and Expo come from the game. The config plugin is CommonJS (`plugin.cjs`) and requires
   `expo/config-plugins` only inside the plugin function, so tests run without Expo. Only
-  `rustore-pay/` ships to games (`files` in `package.json`).
+  `rustore-pay/` and `yandex-ads/` ship to games (`files` in `package.json`).
+- `yandex-ads/` holds the one Yandex Mobile Ads SDK version for every game (owner, 19.11.2026). Raise
+  `YANDEX_ADS.version` only to a version published in **both** npm (`yandex-mobile-ads`) and Maven
+  Central (`com.yandex.android:mobileads`) — check, never from memory or from the РСЯ notice alone.
 - RuStore Pay wrapper methods and their argument counts are pinned to the wrapper version in
   `plugin.cjs` (`PAY`); a new wrapper version means re-checking them (javap of the AAR) — never from
   memory. Never add `updateAcknowledgementState` back (it breaks payments in 11.1.0).
